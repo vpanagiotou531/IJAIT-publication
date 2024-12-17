@@ -1,0 +1,68 @@
+#!/bin/bash
+# run_gromacs.sh
+ 
+# Step 1: Create topology files using the selected force field (e.g., CHARMM36)
+# -f: Input structure (PDB) file
+# -o: Output GROMACS structure (GRO) file
+# -p: Output topology (TOP) file
+# -i: Output include topology (ITP) file
+# -water: Water model (e.g., tip3p)
+gmx pdb2gmx -f complex.pdb -o complex.gro -p topol.top -i posre.itp -ff charmm36-mar2019 -water tip3p
+ 
+# Step 2: Define simulation box
+# -cp: Input coordinate file
+# -cs: Solvent coordinate file
+# -o: Output solvated structure file
+# -box: Box dimensions (e.g., 5x5x5 nm)
+gmx editconf -f complex.gro -o complex_box.gro -c -d 1.0 -bt cubic
+ 
+# Step 3: Solvate the system with water
+# -cp: Input solute coordinate file
+# -cs: Solvent coordinate file
+# -o: Output solvated structure file
+# -p: Topology file
+gmx solvate -cp complex_box.gro -cs spc216.gro -o complex_solv.gro -p topol.top
+ 
+# Step 4: Create an index file to specify the groups for energy minimization
+# -f: Input structure file
+# -o: Output index file
+echo -e "q\n" | gmx make_ndx -f complex_solv.gro -o index.ndx
+ 
+# Step 5: Perform energy minimization
+# -f: Input molecular dynamics parameter (mdp) file
+# -c: Input structure file
+# -r: Input reference structure file
+# -n: Input index file
+# -p: Input topology file
+# -o: Output trajectory file
+# -e: Output energy file
+# -g: Output log file
+# -t: Input trajectory file to continue from
+# -init_t: Initial time for input trajectory
+gmx grompp -f em.mdp -c complex_solv.gro -r complex_solv.gro -n index.ndx -p topol.top -o em.tpr
+gmx mdrun -v -deffnm em
+ 
+# Step 6: Equilibrate the system (NVT and NPT)
+# NVT equilibration
+gmx grompp -f nvt.mdp -c em.gro -r em.gro -n index.ndx -p topol.top -o nvt.tpr
+gmx mdrun -v -deffnm nvt
+ 
+# NPT equilibration
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -n index.ndx -p topol.top -o npt.tpr
+gmx mdrun -v -deffnm npt
+ 
+# Step 7: Run the production MD simulation
+gmx grompp -f md.mdp -c npt.gro -t npt.cpt -n index.ndx -p topol.top -o md.tpr
+gmx mdrun -v -deffnm md
+ 
+# Step 8: Analyze the trajectory
+# -f: Input trajectory file
+# -s: Input run input file
+# -o: Output property file
+# -xvg: xvg plot output format (e.g., xmgrace)
+gmx rms -s md.tpr -f md.xtc -o rmsd.xvg -xvg none
+gmx gyrate -s md.tpr -f md.xtc -o rg.xvg -xvg none
+gmx hbond -s md.tpr -f md.xtc -num hbnum.xvg -xvg none
+gmx mindist -s md.tpr -f md.xtc -o mindist.xvg -xvg none
+ 
+# Further analysis can be performed as needed for your specific system and research question
